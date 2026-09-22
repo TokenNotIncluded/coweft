@@ -7,19 +7,19 @@ import { Button } from './ui/button';
 import { Modal } from './ui/dialog';
 import { ErrorNotice, RichText } from './community';
 
-export function Composer({ open, close, initialKind = 'discussion', thread }: {
-  open: boolean; close: () => void; initialKind?: Kind; thread?: Thread;
+export function Composer({ open, close, initialKind = 'discussion', thread, initialTitle = '', onPublished }: {
+  open: boolean; close: () => void; initialKind?: Kind; thread?: Thread; initialTitle?: string; onPublished?: () => void;
 }) {
   const me = useMe();
   const navigate = useNavigate();
   const form = useRef<HTMLFormElement>(null);
-  const [title, setTitle] = useState(thread?.title ?? '');
+  const [title, setTitle] = useState(thread?.title ?? initialTitle);
   const [body, setBody] = useState(thread?.body ?? '');
   const [kind, setKind] = useState<Kind>(thread?.kind ?? initialKind);
   const [view, setView] = useState<'write' | 'preview' | 'split'>('write');
   const [discard, setDiscard] = useState(false);
   const mutation = useCommand(result => {
-    if (!thread) { setTitle(''); setBody(''); setView('write'); }
+    if (!thread) { setTitle(''); setBody(''); setView('write'); onPublished?.(); }
     close();
     if (result.id) navigate(`/threads/${result.id}`);
   });
@@ -34,7 +34,7 @@ export function Composer({ open, close, initialKind = 'discussion', thread }: {
     mutation.mutate(thread ? { action: 'edit', thread_id: thread.id, title, body, expected_revision: thread.revision } : { action: 'create_thread', title, body, kind });
   };
   return <>
-    <Modal open={open} onOpenChange={value => { if (!value) requestClose(); }} layout="editor" title={thread ? '接着修改这份记录。' : '把一个想法，放进讨论。'} description={thread ? `基于修订 ${thread.revision}。原文更新时会阻止覆盖，你的修改仍会保留。` : '问题、尝试、证据。先把你知道的写下来。'}>
+    <Modal open={open} onOpenChange={value => { if (!value) requestClose(); }} layout="editor" title={thread ? '编辑讨论' : '新讨论'} description={thread ? `基于修订 ${thread.revision}。原文更新时会阻止覆盖，你的修改仍会保留。` : '以你的共同账号发布。支持 Markdown。'}>
       <form ref={form} className="composer" onSubmit={submit} onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); form.current?.requestSubmit(); } }}>
         <div className="composer-meta"><span className="mono">{thread ? 'EDIT / 修订' : 'NEW THREAD / 新线索'}</span><span>{me.data?.account.name ?? '通过 LMM 登录'}</span></div>
         <label className="title-field"><span className="sr-only">标题</span><input name="title" value={title} onChange={event => setTitle(event.target.value)} maxLength={180} required autoComplete="off" placeholder="你正在解决什么问题？"/></label>

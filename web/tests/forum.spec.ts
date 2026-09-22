@@ -14,12 +14,12 @@ test('actual public routes render on desktop and mobile', async ({ page }, info)
   await mockCommunity(page, { authenticated: false });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('把想法');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('讨论');
   await expect(page.getByRole('link', { name: 'LMM 登录', exact: true })).toHaveAttribute('href', '/auth/login');
   await expect(page.getByRole('heading', { name: topic })).toBeVisible();
   await noOverflow(page); await screenshot(page, info, 'discussion');
   await page.getByRole('link', { name: '知识', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('知识留下来');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('知识');
   await expect(page.getByRole('heading', { name: 'OIDC 登录与模型调用，是两份不同的授权' })).toBeVisible();
   await noOverflow(page); await screenshot(page, info, 'knowledge');
   await page.getByRole('link', { name: '共识', exact: true }).click();
@@ -34,7 +34,7 @@ test('filter, search and clear change actual API queries', async ({ page }) => {
   await expect(page.locator('.thread-row')).toHaveCount(2);
   await page.getByRole('textbox', { name: '搜索讨论' }).fill('没有对应的词');
   await page.getByRole('button', { name: '执行搜索' }).click();
-  await expect(page.getByRole('heading', { name: '这条线索，还没有结果。' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '没有找到对应内容' })).toBeVisible();
   await page.getByRole('button', { name: '清除搜索' }).click();
   await expect(page.locator('.thread-row')).toHaveCount(2);
   await expect(page.getByRole('textbox', { name: '搜索讨论' })).toHaveValue('');
@@ -73,7 +73,7 @@ test('compose, preview and publish use the existing command contract', async ({ 
 test('edit conflicts preserve the original revision and draft', async ({ page }) => {
   const fixture = await mockCommunity(page); await page.goto(`/threads/${threadId}`);
   await page.getByRole('button', { name: '编辑', exact: true }).click();
-  const editor = page.getByRole('dialog', { name: '接着修改这份记录。', exact: true });
+  const editor = page.getByRole('dialog', { name: '编辑讨论', exact: true });
   const confirmation = page.getByRole('dialog', { name: '保留未提交的内容？', exact: true });
   await page.locator('#body-editor').fill('我的修改不能被静默覆盖。');
   fixture.details.get(threadId)!.thread.revision = 2;
@@ -99,10 +99,10 @@ test('retry after a network failure reuses the same write identity', async ({ pa
     if (keys.length === 1) return route.abort('failed');
     return route.fulfill({ json: { id: 'reply-fixture-retried' } });
   });
-  await page.getByRole('textbox', { name: '补上你的那一段。' }).fill('重试不应重复发布。');
+  await page.getByRole('textbox', { name: '回复讨论' }).fill('重试不应重复发布。');
   await page.getByRole('button', { name: '发布回复' }).click();
   await expect(page.locator('.reply-form').getByRole('alert')).toBeVisible();
-  await expect(page.getByRole('textbox', { name: '补上你的那一段。' })).toHaveValue('重试不应重复发布。');
+  await expect(page.getByRole('textbox', { name: '回复讨论' })).toHaveValue('重试不应重复发布。');
   await page.getByRole('button', { name: '发布回复' }).click();
   await expect(page.getByText('回复已发布。', { exact: true })).toBeVisible();
   expect(keys).toHaveLength(2); expect(keys[0]).toBe(keys[1]);
@@ -119,7 +119,7 @@ test('thread tools, AI draft and replies remain connected', async ({ page }, inf
   await expect(page.getByRole('heading', { name: '待讨论的提案' })).toBeVisible();
   expect(fixture.aiCalls).toEqual(['map', 'review', 'proposal']);
   await noOverflow(page); await screenshot(page, info, 'thread');
-  await page.getByRole('textbox', { name: '补上你的那一段。' }).fill('补充一个有来源的测试结果。');
+  await page.getByRole('textbox', { name: '回复讨论' }).fill('补充一个有来源的测试结果。');
   await page.getByRole('button', { name: '发布回复' }).click();
   await expect(page.locator('.reply').getByText('补充一个有来源的测试结果。')).toBeVisible();
   await expect(page.getByRole('region', { name: 'AI 生成结果' })).toHaveCount(0);
@@ -131,7 +131,7 @@ test('proposal voting calls the authorized shared-account command', async ({ pag
   await expect(page.getByText('已记录本次选择。人和 AI 使用的仍是同一张票。')).toBeVisible();
   expect(fixture.writes[0].command).toMatchObject({ action: 'vote', choice: 'support' });
   await page.getByRole('button', { name: '已截止', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '这里还没有对应的提案。' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '还没有对应的提案' })).toBeVisible();
 });
 
 test('account panel has a real endpoint, export, clipboard fallback and focus return', async ({ page }, info) => {
@@ -179,20 +179,22 @@ test('loading failures never turn into fake discussions', async ({ page }) => {
 
 test('empty state is honest and still has a working composer', async ({ page }) => {
   await mockCommunity(page, { empty: true }); await page.goto('/');
-  await expect(page.getByRole('heading', { name: '第一条讨论，从真实的问题开始。' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '还没有讨论' })).toBeVisible();
   await page.getByRole('button', { name: '发起讨论', exact: true }).first().click();
   await expect(page.getByRole('dialog')).toBeVisible();
 });
 
-test('motion can be paused and honors reduced-motion changes', async ({ page }) => {
+test('theme is reversible and persists across navigation and reload', async ({ page }, info) => {
   await mockCommunity(page); await page.goto('/');
-  await page.getByRole('button', { name: '暂停动效' }).click();
-  await expect(page.locator('.loom')).toHaveAttribute('data-motion', 'paused');
-  await page.getByRole('button', { name: '播放动效' }).click();
-  await expect(page.locator('.loom')).toHaveAttribute('data-motion', 'running');
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(page.locator('.loom')).toHaveAttribute('data-motion', 'reduced');
-  await expect(page.getByRole('button', { name: '动效已随系统关闭' })).toBeDisabled();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.getByRole('button', { name: '切换浅色主题' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('link', { name: '知识', exact: true }).click();
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await screenshot(page, info, 'light-library');
+  await page.getByRole('button', { name: '切换深色主题' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
 
 test('responsive widths do not introduce horizontal scrolling', async ({ page }) => {
@@ -211,4 +213,94 @@ test('untrusted Markdown cannot execute or load remote tracking images', async (
   await expect(page.locator('.article-content img')).toHaveCount(0);
   await expect(page.locator('a[href^="javascript:"]')).toHaveCount(0);
   expect(await page.evaluate(() => '__unsafe' in window)).toBe(false);
+});
+
+test('board and list show the same real records and retain filters', async ({ page }) => {
+  await mockCommunity(page); await page.goto('/?kind=experiment');
+  await expect(page.locator('.thread-row')).toHaveCount(2);
+  await page.getByRole('button', { name: '列表视图' }).click();
+  await expect(page).toHaveURL(/view=list/);
+  await expect(page.locator('.view-list .thread-row')).toHaveCount(2);
+  await page.reload();
+  await expect(page.getByRole('button', { name: '列表视图' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: '空间视图' }).click();
+  await expect(page.locator('.view-board .thread-row')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: '实验', exact: true })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('preview preserves filters and supports back forward and permalink', async ({ page }, info) => {
+  await mockCommunity(page); await page.goto('/?kind=experiment');
+  const card = page.getByRole('link').filter({ has: page.getByRole('heading', { name: topic }) });
+  await card.click();
+  const reader = page.getByRole('dialog', { name: '讨论预览' });
+  await expect(reader).toBeVisible();
+  await expect(reader.getByRole('heading', { level: 1 })).toHaveText(topic);
+  await expect(page).toHaveURL(/thread=/);
+  await noOverflow(page); await screenshot(page, info, 'preview');
+  await reader.getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(reader).toHaveCount(0);
+  await expect(page).toHaveURL(/kind=experiment$/);
+  await expect(card).toBeFocused();
+  await page.goForward();
+  await expect(reader).toBeVisible();
+  await reader.getByRole('link', { name: '在完整页面打开' }).click();
+  await expect(page).toHaveURL(new RegExp('/threads/' + threadId + '$'));
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('an initial preview URL closes locally instead of leaving the site', async ({ page }) => {
+  await mockCommunity(page); await page.goto('/?thread=' + threadId);
+  await expect(page.getByRole('dialog', { name: '讨论预览' })).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page).toHaveURL('http://127.0.0.1:4173/');
+});
+
+test('quick title is carried into the actual editor', async ({ page }) => {
+  await mockCommunity(page); await page.goto('/');
+  await page.getByRole('textbox', { name: '新讨论的标题' }).fill('一个真正需要解决的问题');
+  await page.getByRole('button', { name: '继续撰写' }).click();
+  await expect(page.getByRole('dialog').getByRole('textbox', { name: '标题', exact: true })).toHaveValue('一个真正需要解决的问题');
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '保留未提交的内容？' })).toBeVisible();
+});
+
+test('keyboard search and reduced-motion do not depend on animation', async ({ page }) => {
+  await mockCommunity(page); await page.goto('/');
+  await page.keyboard.press('Control+k');
+  await expect(page.getByRole('textbox', { name: '搜索讨论' })).toBeFocused();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(page.locator('.discussion-field')).toHaveAttribute('data-motion', 'reduced');
+  await expect(page.getByRole('heading', { name: topic })).toBeVisible();
+});
+
+test('closing a preview protects an unsent reply', async ({ page }) => {
+  await mockCommunity(page); await page.goto('/');
+  await page.getByRole('heading', { name: topic }).click();
+  const reader = page.getByRole('dialog', { name: '讨论预览' });
+  await reader.getByRole('textbox', { name: '回复讨论' }).fill('这段回复还没有提交。');
+  await reader.getByRole('button', { name: '关闭', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: '回复尚未提交' });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: '继续写回复' }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(reader.getByRole('textbox', { name: '回复讨论' })).toHaveValue('这段回复还没有提交。');
+  await reader.getByRole('button', { name: '关闭', exact: true }).click();
+  await confirmation.getByRole('button', { name: '放弃回复并关闭' }).click();
+  await expect(reader).toHaveCount(0);
+});
+
+test('cloud pauses explicitly and when a reader is open', async ({ page }) => {
+  await mockCommunity(page); await page.goto('/');
+  await page.getByRole('button', { name: '暂停动效' }).click();
+  await expect(page.locator('.discussion-field')).toHaveAttribute('data-motion', 'paused');
+  await page.getByRole('button', { name: '播放动效' }).click();
+  await expect(page.locator('.discussion-field')).toHaveAttribute('data-motion', 'running');
+  await page.getByRole('heading', { name: topic }).click();
+  await expect(page.locator('.discussion-field')).toHaveAttribute('data-motion', 'inactive');
+});
+
+test('malformed preview ids never request another endpoint', async ({ page }) => {
+  await mockCommunity(page); await page.goto('/?thread=..%2F..%2Fme');
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('无效的讨论地址');
 });

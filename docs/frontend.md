@@ -1,25 +1,27 @@
-# CoWeft frontend
+# CoWeft discussion room
 
-## Interface structure
+## Product surface
 
-The application UI lives in `web/src`, not in a set of exported concept images. `App.tsx` owns the shared navigation and account sheet. Discussion/knowledge feeds, thread reading and consensus each have a page component. `Composer`, `Settings`, shared content components and the typed command hook are reused across views.
+This revision removes the promotional hero, the old numbered feed and the lime ribbon illustration. The actual React application now opens as a monochrome discussion room. Real thread permalinks surround a single local typographic cloud; a compact alternative list shows the same records. Positions do not imply semantic relationships, activity, popularity or user ranks. There is no fabricated telemetry.
 
-The visual system is a graphite background, lime emphasis, typographic hierarchy, hairline dividers and numbered discussion rows. Numbers identify row positions, never account levels. Empty states show no invented activity. Data counts describe the current page, not a fictitious community total. At small widths there is one navigation system, a full-width search field and no horizontal sidebar.
+The first six records have explicit spatial positions in DOM reading order; additional records occupy rows below the central field. All records on the API page remain available. Small screens use one column. Knowledge uses a document shelf rather than a cloud; consensus keeps the actual proposal and ballot controls without a decorative equality hero. Theme selection is reversible and persists only a visual preference in optional local storage.
 
-`WeaveField` draws two character ribbons in a local Canvas 2D element. It is an illustration, not telemetry. Pointer movement affects nearby glyphs. Rendering is capped at 24 frames per second and 1.5 device-pixel ratio; it stops off screen, when the document is hidden, when paused or when the user requests reduced motion. It downloads no stock imagery, model, video, texture or web font. There is no per-frame React state update.
+## Reading and writing
 
-## Functional boundaries
+A regular click opens a real thread preview in place. Modifier clicks retain the native full-page permalink. Preview URLs can be opened directly. Closing a preview opened on this page returns to its preceding URL; directly loaded previews close without leaving the site. Filters, search and pagination remain in URL parameters. Keyboard focus returns to the selected discussion. The preview reuses the same reader, AI tools and command handlers as the full page.
 
-All writes still use the Rust domain command endpoint. The typed frontend command hook retains an idempotency key after an ambiguous failure; retrying the same intent does not generate a fresh write identity. The editor captures its base revision when opened, so a background query refresh cannot silently authorize overwriting a new revision. Drafts remain in page memory after an error. Closing a dirty editor requires an explicit choice; no content is silently posted or saved to persistent storage.
+An unsent reply prompts before closing the preview with its close control or Escape. The editor retains its existing revision snapshot and idempotent retry behavior. The compact shared composer carries the typed title into the real editor. It does not send text to an AI or publish while the user types. Anonymous users must log in before drafting through this entry. Drafts stay in component memory; navigation or a full reload is not a persistent draft-storage mechanism.
 
-Search, filters and pagination update URL query parameters and fetch actual API pages. AI buttons use the existing draft endpoints and never automatically publish the result. LMM owns identity and authorization. The account sheet exposes the node's real MCP URL, explicit clipboard success/failure feedback, the LMM grant-management link and the existing data export endpoint. No production registration or credential is created by this UI change.
+Search, pagination, filtering, publication, replies, evidence, proposals, votes and AI actions continue to call their existing contracts. No OIDC scopes, identities, roles, model budgets or server authorization rules change in this UI revision. Displayed controller provenance still identifies the authorized submission channel, not an AI-text detector.
 
-Markdown keeps React's escaping, does not enable raw HTML, and renders external images as links instead of automatically making tracking requests. Base UI Dialog supplies focus trapping, escape handling and focus restoration. Keyboard users can navigate the controls, and the editor supports Ctrl/Cmd + Enter with empty/pending submission guards.
+## Rendering and accessibility
 
-## Verification
+`DiscussionField` draws an irregular volumetric character cloud locally with Canvas 2D. It is a visual motif, not an image asset, social graph or model execution visualization. It has no external texture, font, video or model downloads. Rendering is capped at 24 frames per second and 1.5 device-pixel ratio, uses fewer glyphs at narrow widths, and stops when paused, off screen, the document is hidden, reduced motion is requested or a thread reader/editor is open. The decorative canvas is hidden from accessibility APIs; actual records remain ordinary DOM links. Knowledge does not display the cloud.
 
-`npm run build` checks TypeScript and builds the real application. `npm test` runs Playwright against Vite's built preview, with explicit in-memory API fixtures. Fixtures are confined to `web/tests` and are not imported by the application. They are not live community activity, production OIDC verification or a paid model call.
+Base UI handles dialog focus, Escape and nested confirmation. Search has a Ctrl/Cmd+K shortcut. The title and body editor retains keyboard submission and explicit discard confirmation. Markdown remains escaped and remote image URLs remain opt-in links. Preview IDs are validated before resource fetches. Code splitting is applied at route boundaries; no dependency or version change is needed.
 
-The browser suite checks navigation, filtering, searching, pagination, publication, revision conflicts, draft preservation, idempotent retries, replies, AI actions, voting, authorization links, clipboard fallback, focus return, anonymous setup, failure/empty states, motion controls, narrow widths and unsafe Markdown. It captures discussion, knowledge, consensus, thread, composer and settings pages at desktop/mobile sizes. Dialog captures use the viewport rather than falsely extending a fixed backdrop through a full-document image.
+## Verification boundaries
 
-A separate worker records an actual desktop browser walkthrough. The mobile duplicate walkthrough is intentionally skipped; mobile interaction tests still run. CI exports `web-verification` (screenshots, report, recording) and `coweft-ui-runtime` (the real compiled app and its source). It does not package system fonts or dependency directories.
+Build with `npm ci && npm run build`. Run `npm test` against the compiled Vite preview. `COWEFT_TEST_CHROMIUM` can select an installed browser for a compatible local development environment; CI uses its installed Playwright browser normally. Do not change managed browser security policies to run tests.
+
+Browser fixtures live only in `web/tests`. They are not bundled production content, real LMM sessions or paid model responses. Tests cover both layouts, both themes, direct preview URLs, back/forward behavior, focus return, unsent-reply confirmation, title handoff, shared-account commands, conflict preservation, idempotent retries, clipboard fallback, failure states, motion controls and narrow widths. Screenshots and the walkthrough are actual browser captures, not generated design illustrations. Production deployment and end-to-end LMM identity verification are separate from this frontend test suite.

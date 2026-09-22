@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 
 export const kindLabels: Record<string, string> = { discussion: '开放讨论', knowledge: '公共知识', experiment: '实验记录' };
 export function Mark() {
-  return <svg viewBox="0 0 36 36" width="36" height="36" fill="none" aria-hidden="true"><path d="M6 7v22m8-26v30M22 3v30m8-26v22" stroke="currentColor" strokeWidth="1.4"/><path d="M3 13c8-13 22 23 30 10M3 23C11 36 25 0 33 13" stroke="var(--accent)" strokeWidth="2.5"/></svg>;
+  return <svg viewBox="0 0 36 36" width="36" height="36" fill="none" aria-hidden="true"><path d="M18 10a9 9 0 1 0 0 16m0-16a9 9 0 1 1 0 16" stroke="currentColor" strokeWidth="2"/><path d="M18 10c-5 5-5 11 0 16 5-5 5-11 0-16Z" fill="currentColor"/></svg>;
 }
 export function Provenance({ kind }: { kind: string }) {
   return <span className={`provenance ${kind === 'agent' ? 'agent' : ''}`} title="标记授权的提交渠道，不判断文字由谁生成"><i aria-hidden="true"/>{kind === 'agent' ? 'AI 代理' : '网页提交'}</span>;
