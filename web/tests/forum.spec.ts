@@ -192,6 +192,7 @@ test('theme is reversible and persists across navigation and reload', async ({ p
   await page.getByRole('link', { name: '知识', exact: true }).click();
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.getByRole('heading', { name: 'OIDC 登录与模型调用，是两份不同的授权' })).toBeVisible();
   await screenshot(page, info, 'light-library');
   await page.getByRole('button', { name: '切换深色主题' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -199,6 +200,7 @@ test('theme is reversible and persists across navigation and reload', async ({ p
 
 test('responsive widths do not introduce horizontal scrolling', async ({ page }) => {
   await mockCommunity(page); await page.goto('/');
+  await expect(page.getByRole('heading', { name: topic })).toBeVisible();
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 }); await noOverflow(page);
   }
@@ -267,6 +269,10 @@ test('quick title is carried into the actual editor', async ({ page }) => {
 
 test('keyboard search and reduced-motion do not depend on animation', async ({ page }) => {
   await mockCommunity(page); await page.goto('/');
+  // Navigation resolves before a lazy route has necessarily mounted. Wait for
+  // the real target and its content before sending a keyboard-only action.
+  await expect(page.getByRole('textbox', { name: '搜索讨论' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: topic })).toBeVisible();
   await page.keyboard.press('Control+k');
   await expect(page.getByRole('textbox', { name: '搜索讨论' })).toBeFocused();
   await page.emulateMedia({ reducedMotion: 'reduce' });

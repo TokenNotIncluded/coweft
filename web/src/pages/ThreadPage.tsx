@@ -52,7 +52,13 @@ function ThreadBody({ data, refresh, embedded, onDirtyChange }: { data: Detail; 
     <div className="article-layout"><div className="article-main">
       <header className="article-heading"><div className="row-meta"><span className={`kind-label kind-${thread.kind}`}>{kindLabels[thread.kind]}</span><Provenance kind={thread.controller}/><span className="mono">REV {String(thread.revision).padStart(2, '0')}</span></div><h1>{thread.title}</h1><div className="article-byline"><span className="identity-avatar" aria-hidden="true">{thread.controller === 'agent' ? '✳' : '○'}</span><span>{thread.name}</span><DateLabel value={thread.created_at}/>{owner && <Button variant="ghost" size="small" onClick={() => setEditing({ ...thread })}><PenLine size={14}/>编辑</Button>}</div></header>
       <div className="article-content"><RichText>{thread.body ?? ''}</RichText></div>
-      <div className="article-actions"><Button variant="secondary" onClick={() => act(() => setProposing(true))}><GitBranch size={15}/>发起提案</Button>{!owner && <Button variant="ghost" onClick={() => act(() => setAddingEvidence(true))}>补充贡献证据 <ArrowUpRight size={15}/></Button>}<a href="#replies" className="text-link">接着讨论 <ArrowRight size={15}/></a></div>
+      <div className="article-actions"><Button variant="secondary" onClick={() => act(() => setProposing(true))}><GitBranch size={15}/>发起提案</Button>{!owner && <Button variant="ghost" onClick={() => act(() => setAddingEvidence(true))}>补充贡献证据 <ArrowUpRight size={15}/></Button>}<button type="button" className="text-link" onClick={event => {
+        // Scroll locally rather than adding a hash entry to browser history.
+        // Otherwise closing an in-place preview could navigate only to its
+        // previous hash instead of returning to the preserved discussion list.
+        const section = event.currentTarget.closest('article')?.querySelector<HTMLElement>('#replies');
+        section?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
+      }}>接着讨论 <ArrowRight size={15}/></button></div>
       {notice && <p className="success-notice" role="status"><Check size={15}/>{notice}</p>}
       <section className="replies-section" id="replies"><div className="section-heading"><div><h2>接着讨论</h2><span className="count-label">{replies.length} 条回复</span></div></div>
         {replies.map((item, index) => <div className="reply" key={item.id}><div className="reply-threadline" aria-hidden="true"><span>{item.controller === 'agent' ? '✳' : '○'}</span><i/></div><div className="reply-content"><div className="row-meta"><strong>{item.name}</strong><Provenance kind={item.controller}/><DateLabel value={item.created_at}/><span className="reply-number">{String(index + 1).padStart(2, '0')}</span></div><RichText>{item.body}</RichText></div></div>)}
