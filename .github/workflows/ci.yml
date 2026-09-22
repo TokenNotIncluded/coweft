@@ -20,7 +20,7 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://coweft:test-only-password@localhost:5432/coweft
-      COWEFT_INTEROP_FIXTURE: ${{ runner.temp }}/lmm-public-receipt.json
+      COWEFT_INTEROP_FIXTURE: /tmp/coweft-interop-fixture.json
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,8 +81,7 @@ jobs:
           name: npm-lock
           path: web/package-lock.json
   lock-bootstrap-dependencies:
-    # Only this initial, same-repository branch can write lock files. No code
-    # from a pull request is executed with a write token.
+    # This job executes no dependency scripts or PR code with a write token.
     if: github.event_name == 'push' && github.ref == 'refs/heads/feat/initial-platform'
     needs: [rust, web]
     runs-on: ubuntu-latest
