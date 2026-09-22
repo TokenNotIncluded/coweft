@@ -1,16 +1,16 @@
 FROM node:22-bookworm-slim AS web
 WORKDIR /build/web
-COPY web/package*.json ./
-RUN npm install --no-audit --no-fund
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
 FROM rust:1-bookworm AS rust
 WORKDIR /build
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
-RUN cargo build --release
+RUN cargo build --locked --release
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* && useradd --uid 10001 --create-home coweft

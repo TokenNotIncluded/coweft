@@ -1,7 +1,6 @@
-//! Verified public snapshots with durable, at-least-once delivery. This is a
-//! deliberately narrow CoWeft federation profile, NOT an ActivityPub claim.
-//! LMM authenticates publication; peers cannot invent authors or rewrite a
-//! signed snapshot. Remote content never executes local governance commands.
+//! A narrow public-thread snapshot federation profile, not ActivityPub.
+//! Every receipt requires both an LMM user grant and origin resource approval.
+//! Remote content is data and never executes local governance commands.
 use std::{env, time::Duration};
 use axum::{extract::{Path, Query, State}, http::{HeaderMap, StatusCode}, Json};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -31,18 +30,18 @@ pub struct Receipt {
 pub struct Verified { pub snapshot: Snapshot, pub receipt: Receipt, pub digest: String }
 fn enabled() -> bool { env::var("COWEFT_FEDERATION_ENABLED").as_deref() == Ok("true") }
 fn peers() -> Result<Vec<String>> {
-    let mut peers = Vec::new();
+    let mut values = Vec::new();
     for value in env::var("COWEFT_FEDERATION_PEERS").unwrap_or_default().split(',') {
         let origin = value.trim().trim_end_matches('/');
         if origin.is_empty() { continue; }
         auth::validate_origin(origin, false).map_err(|_| auth::bad("invalid_federation_peer"))?;
-        if !peers.iter().any(|v| v == origin) { peers.push(origin.to_owned()); }
+        if !values.iter().any(|v| v == origin) { values.push(origin.to_owned()); }
     }
-    if peers.len() > 32 { return Err(auth::bad("too_many_federation_peers")); }
-    Ok(peers)
+    if values.len() > 32 { return Err(auth::bad("too_many_federation_peers")); }
+    Ok(values)
 }
-/// Validates exact bytes, not a reconstructed JSON object. Receipts have their
-/// own type and audience and intentionally outlive the original access token.
+/// Validate exact bytes. The dedicated receipt type/audience intentionally
+/// outlives the original grant but is never accepted as a credential.
 pub fn verify_with_keys(issuer: &str, keys: &JwkSet, envelope: &Envelope) -> Result<Verified> {
     if envelope.payload.len() > 350_000 || envelope.receipt.len() > 16_384 { return Err(auth::bad("event_too_large")); }
     let bytes = URL_SAFE_NO_PAD.decode(&envelope.payload).map_err(|_| auth::bad("invalid_payload"))?;
@@ -55,8 +54,7 @@ pub fn verify_with_keys(issuer: &str, keys: &JwkSet, envelope: &Envelope) -> Res
     let key = DecodingKey::from_jwk(key).map_err(|_| auth::bad("invalid_receipt_key"))?;
     let mut validation = Validation::new(Algorithm::RS256);
     validation.set_issuer(&[issuer]); validation.set_audience(&["urn:coweft:public-thread-v1"]);
-    validation.set_required_spec_claims(&["iss", "aud", "sub"]);
-    validation.validate_exp = false;
+    validation.set_required_spec_claims(&["iss", "aud", "sub"]); validation.validate_exp = false;
     let claims = jsonwebtoken::decode::<Receipt>(&envelope.receipt, &key, &validation).map_err(|_| auth::bad("invalid_receipt"))?.claims;
     if claims.digest != digest || claims.purpose != "public-thread-v1" || claims.iat > Utc::now().timestamp() + 30 || claims.iat <= 0 || claims.sub.is_empty() || claims.sub.len() > 128 || claims.name.as_ref().is_some_and(|v| v.len() > 512) || !["human", "agent"].contains(&claims.controller.as_str()) {
         return Err(auth::bad("receipt_content_mismatch"));
@@ -71,8 +69,7 @@ pub fn verify_with_keys(issuer: &str, keys: &JwkSet, envelope: &Envelope) -> Res
 async fn verify(state: &App, envelope: &Envelope) -> Result<Verified> {
     match verify_with_keys(&state.identity.meta.issuer, &state.identity.keys, envelope) {
         Err(Failure(_, "unknown_receipt_key")) => {
-            // Never follow an untrusted jku/x5u or source URL. Key refresh has
-            // exactly one destination: the configured LMM discovery endpoint.
+            // No untrusted jku/x5u, source URL or caller-selected key endpoint.
             let keys: JwkSet = state.http.get(&state.identity.meta.jwks_uri).send().await.map_err(|_| auth::unavailable())?
                 .error_for_status().map_err(|_| auth::unavailable())?.json().await.map_err(|_| auth::unavailable())?;
             verify_with_keys(&state.identity.meta.issuer, &keys, envelope)
@@ -81,8 +78,7 @@ async fn verify(state: &App, envelope: &Envelope) -> Result<Verified> {
     }
 }
 pub async fn import_verified(pool: &sqlx::PgPool, envelope: &Envelope, verified: Verified) -> Result<Value> {
-    let snapshot = &verified.snapshot;
-    let claims = &verified.receipt;
+    let snapshot = &verified.snapshot; let claims = &verified.receipt;
     let mut transaction = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,2))")
         .bind(format!("{}:{}", snapshot.source, snapshot.id)).execute(&mut *transaction).await?;
@@ -110,8 +106,7 @@ pub async fn inbox(State(state): State<App>, Json(envelope): Json<Envelope>) -> 
 }
 pub async fn publish(State(state): State<App>, headers: HeaderMap, Path(id): Path<Uuid>) -> Result<Json<Value>> {
     if !enabled() { return Err(Failure(StatusCode::SERVICE_UNAVAILABLE, "federation_disabled")); }
-    let (actor, _) = auth::authenticate(&state, &headers, true).await?;
-    actor.require("coweft:write")?;
+    let (actor, _) = auth::authenticate(&state, &headers, true).await?; actor.require("coweft:write")?;
     let thread = sqlx::query("SELECT title,body,kind,revision FROM threads WHERE id=$1 AND account_id=$2")
         .bind(id).bind(&actor.id).fetch_optional(&state.db).await?.ok_or(Failure(StatusCode::FORBIDDEN, "not_thread_owner"))?;
     let snapshot = Snapshot { version: 1, source: state.origin.clone(), id,
@@ -123,9 +118,12 @@ pub async fn publish(State(state): State<App>, headers: HeaderMap, Path(id): Pat
     let envelope = if let Some(value) = existing { serde_json::from_value::<Envelope>(value).map_err(|_| auth::bad("invalid_stored_event"))? } else {
         let origin = url::Url::parse(&state.identity.meta.issuer).map_err(|_| auth::unavailable())?.origin().ascii_serialization();
         let token = auth::delegated_token(&state, &headers).await?;
-        let result: Value = state.http.post(format!("{origin}/api/oidc/attest")).bearer_auth(&token)
-            .json(&json!({"digest":digest,"purpose":"public-thread-v1"})).send().await.map_err(|_| auth::unavailable())?
-            .error_for_status().map_err(|_| auth::unavailable())?.json().await.map_err(|_| auth::unavailable())?;
+        // Two independent approvals: the authenticated author and this node's
+        // resource credential. Only LMM receives them, never a federation peer.
+        let result: Value = state.http.post(format!("{origin}/api/oidc/attest"))
+            .basic_auth(&state.identity.resource_id, Some(&state.identity.resource_secret))
+            .json(&json!({"token":token,"digest":digest,"purpose":"public-thread-v1"}))
+            .send().await.map_err(|_| auth::unavailable())?.error_for_status().map_err(|_| auth::unavailable())?.json().await.map_err(|_| auth::unavailable())?;
         Envelope { payload: URL_SAFE_NO_PAD.encode(raw.as_bytes()), receipt: result["receipt"].as_str().ok_or_else(auth::unavailable)?.to_owned() }
     };
     let verified = verify(&state, &envelope).await?;
@@ -154,8 +152,6 @@ pub async fn list(State(state): State<App>) -> Result<Json<Value>> {
     let items: Vec<Value> = sqlx::query_scalar("SELECT to_jsonb(x) FROM (SELECT source,thread_id,title,left(body,240) excerpt,kind,revision,name,controller,received_at FROM remote_threads ORDER BY received_at DESC,source,thread_id LIMIT 100) x").fetch_all(&state.db).await?;
     Ok(Json(json!({"enabled":enabled(),"items":items,"profile":"coweft-public-thread-v1","governance":"origin_node_only"})))
 }
-/// Destinations are explicit deployment configuration, never addresses supplied
-/// by an incoming event. Peers receive only a public envelope, no OAuth token.
 pub fn start_worker(state: App) -> anyhow::Result<()> {
     if !enabled() { return Ok(()); }
     peers().map_err(|_| anyhow::anyhow!("invalid federation peer configuration"))?;
@@ -182,8 +178,8 @@ async fn deliver_one(state: &App) -> Result<bool> {
     sqlx::query("UPDATE federation_deliveries SET next_attempt=now()+interval '1 minute',attempts=attempts+1 WHERE event_id=$1 AND peer=$2")
         .bind(&id).bind(&peer).execute(&mut *transaction).await?;
     transaction.commit().await?;
-    // Config removal also removes permission to contact a formerly trusted peer.
     if !peers()?.contains(&peer) { return Ok(true); }
+    // Public JSON only. No access token, resource secret or browser cookie.
     let success = state.http.post(format!("{peer}/federation/inbox")).json(&event).send().await.is_ok_and(|r| r.status().is_success());
     let delay = (30i64 * (1i64 << attempts.clamp(0, 7))).min(3600);
     sqlx::query("UPDATE federation_deliveries SET delivered_at=CASE WHEN $3 THEN now() ELSE NULL END,next_attempt=now()+($4 * interval '1 second') WHERE event_id=$1 AND peer=$2")

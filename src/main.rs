@@ -5,6 +5,7 @@ mod mcp;
 mod ai;
 mod federation;
 #[cfg(test)] mod database_tests;
+#[cfg(test)] mod session_tests;
 
 use std::{env, sync::Arc, time::Duration};
 use axum::{routing::{get, post}, Router};
@@ -72,7 +73,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/mcp", post(mcp::handle).get(mcp::no_stream).delete(mcp::no_session))
         .fallback_service(ServeDir::new("web/dist").not_found_service(ServeFile::new("web/dist/index.html")))
         .layer(axum::extract::DefaultBodyLimit::max(512 * 1024))
-        .layer(TraceLayer::new_for_http())
+        // Never include query strings, OAuth codes, cookies or headers in spans.
+        .layer(TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<axum::body::Body>| {
+            tracing::info_span!("http", method = %request.method(), path = request.uri().path())
+        }))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(env::var("LISTEN_ADDR").unwrap_or("0.0.0.0:8080".into())).await?;
     axum::serve(listener, app).with_graceful_shutdown(async { let _ = tokio::signal::ctrl_c().await; }).await?;
