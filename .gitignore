@@ -3,6 +3,8 @@
 /web/dist/
 /web/test-results/
 /web/playwright-report/
+/.identity-provider/
+/.ci-locks/
 .env
 *.pem
 *.key

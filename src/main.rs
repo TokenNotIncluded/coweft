@@ -3,6 +3,8 @@ mod commands;
 mod http;
 mod mcp;
 mod ai;
+mod federation;
+#[cfg(test)] mod database_tests;
 
 use std::{env, sync::Arc, time::Duration};
 use axum::{routing::{get, post}, Router};
@@ -37,12 +39,16 @@ async fn main() -> anyhow::Result<()> {
         model_key: env::var("LMM_MODEL_API_KEY").ok().filter(|x| !x.is_empty()),
         model: env::var("LMM_MODEL").unwrap_or_default(),
         ai_daily_requests: env::var("AI_DAILY_REQUESTS").ok().and_then(|x| x.parse().ok()).unwrap_or(100) };
+    federation::start_worker(state.clone())?;
     let cleanup = state.db.clone();
     tokio::spawn(async move {
         let mut timer = tokio::time::interval(Duration::from_secs(300));
-        loop { timer.tick().await; for table in ["login_flows", "web_sessions"] {
-            let _ = sqlx::query(&format!("DELETE FROM {table} WHERE expires_at < now()" )).execute(&cleanup).await;
-        } }
+        loop {
+            timer.tick().await;
+            for table in ["login_flows", "web_sessions"] {
+                let _ = sqlx::query(&format!("DELETE FROM {table} WHERE expires_at < now()")).execute(&cleanup).await;
+            }
+        }
     });
     let app = Router::new()
         .route("/healthz", get(http::health))
@@ -57,11 +63,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/reputation/{id}", get(http::reputation))
         .route("/api/ai/{id}/{mode}", post(ai::generate))
         .route("/api/export", get(http::export))
+        .route("/api/federation/threads", get(federation::list))
+        .route("/api/federation/publish/{id}", post(federation::publish))
+        .route("/federation/inbox", post(federation::inbox))
+        .route("/federation/outbox", get(federation::outbox))
         .route("/.well-known/oauth-protected-resource", get(mcp::metadata))
         .route("/.well-known/oauth-protected-resource/mcp", get(mcp::metadata))
         .route("/mcp", post(mcp::handle).get(mcp::no_stream).delete(mcp::no_session))
         .fallback_service(ServeDir::new("web/dist").not_found_service(ServeFile::new("web/dist/index.html")))
-        .layer(axum::extract::DefaultBodyLimit::max(128 * 1024))
+        .layer(axum::extract::DefaultBodyLimit::max(512 * 1024))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
     let listener = tokio::net::TcpListener::bind(env::var("LISTEN_ADDR").unwrap_or("0.0.0.0:8080".into())).await?;

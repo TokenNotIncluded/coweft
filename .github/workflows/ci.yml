@@ -20,16 +20,35 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://coweft:test-only-password@localhost:5432/coweft
+      COWEFT_INTEROP_FIXTURE: ${{ runner.temp }}/lmm-public-receipt.json
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-targets
+      - name: Read the paired identity implementation
+        uses: actions/checkout@v4
+        with:
+          repository: TokenNotIncluded/api.lmm.best
+          ref: 831f3e56b45dbe152fa71bf39b41c953a60cff2a
+          path: .identity-provider
+          persist-credentials: false
+          sparse-checkout: apps/api-go
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .identity-provider/apps/api-go/go.mod
+          cache-dependency-path: .identity-provider/apps/api-go/go.sum
+      - name: Generate a real Go-signed public receipt for Rust verification
+        run: go test ./oidcprovider -run TestExportInteroperabilityFixture -count=1
+        working-directory: .identity-provider/apps/api-go
+      - name: Rust unit, PostgreSQL and cross-repository interoperability tests
+        run: |
+          if test -f Cargo.lock; then cargo test --locked --all-targets; else cargo test --all-targets; fi
       - run: cargo clippy --all-targets
-      - name: Upload resolved dependency lock
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: cargo-lock
           path: Cargo.lock
@@ -40,10 +59,13 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
+      - run: |
+          if test -f package-lock.json; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm test
@@ -54,4 +76,44 @@ jobs:
           path: |
             web/test-results/
             web/playwright-report/
-            web/package-lock.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-lock
+          path: web/package-lock.json
+  lock-bootstrap-dependencies:
+    # Only this initial, same-repository branch can write lock files. No code
+    # from a pull request is executed with a write token.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/initial-platform'
+    needs: [rust, web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/initial-platform
+      - uses: actions/download-artifact@v4
+        with:
+          name: cargo-lock
+          path: .ci-locks/rust
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-lock
+          path: .ci-locks/web
+      - name: Commit only the two tested lock files without rewriting history
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]; then
+            echo 'The branch advanced during CI; leaving it untouched.'
+            exit 0
+          fi
+          cp .ci-locks/rust/Cargo.lock Cargo.lock
+          cp .ci-locks/web/package-lock.json web/package-lock.json
+          git add -- Cargo.lock web/package-lock.json
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: lock verified Rust and frontend dependencies'
+          git push origin HEAD:refs/heads/feat/initial-platform
