@@ -4,6 +4,9 @@ on:
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: coweft-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   rust:
     runs-on: ubuntu-latest
@@ -60,7 +63,11 @@ jobs:
           node-version: 22
       - run: npm ci --no-audit --no-fund
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
+      - name: Install browser and Chinese system fonts for real-page screenshots
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
       - run: npm test
       - uses: actions/upload-artifact@v4
         if: always()
@@ -69,6 +76,23 @@ jobs:
           path: |
             web/test-results/
             web/playwright-report/
+          retention-days: 14
+      - name: Export the actual built website for independent browser inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coweft-ui-runtime
+          path: |
+            web/dist/
+            web/src/
+            web/index.html
+            web/package.json
+            web/package-lock.json
+            web/tsconfig.json
+            web/vite.config.ts
+            web/tests/
+            web/playwright.config.ts
+          retention-days: 14
   image:
     runs-on: ubuntu-latest
     needs: [rust, web]
