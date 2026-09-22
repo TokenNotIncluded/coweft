@@ -3,7 +3,10 @@ import { me, mockCommunity, proposalTitle, sampleDetail, threadId, topic } from 
 
 async function screenshot(page: Page, info: TestInfo, name: string) {
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true });
+  // A fixed dialog exists only within the viewport. A full-document capture
+  // would misleadingly show uncovered off-screen content beneath the backdrop.
+  const modal = await page.getByRole('dialog').count() > 0;
+  await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: !modal });
 }
 async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -72,18 +75,23 @@ test('compose, preview and publish use the existing command contract', async ({ 
 test('edit conflicts preserve the original revision and draft', async ({ page }) => {
   const fixture = await mockCommunity(page); await page.goto(`/threads/${threadId}`);
   await page.getByRole('button', { name: '编辑', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: '接着修改这份记录。', exact: true });
+  const confirmation = page.getByRole('dialog', { name: '保留未提交的内容？', exact: true });
   await page.locator('#body-editor').fill('我的修改不能被静默覆盖。');
   fixture.details.get(threadId)!.thread.revision = 2;
   await page.getByRole('button', { name: '保存修订', exact: true }).click();
-  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('原文已更新');
+  await expect(editor.getByRole('alert')).toContainText('原文已更新');
   await expect(page.locator('#body-editor')).toHaveValue('我的修改不能被静默覆盖。');
   expect(fixture.writes[0].command).toMatchObject({ action: 'edit', expected_revision: 1 });
-  await page.getByRole('button', { name: '关闭', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '保留未提交的内容？' })).toBeVisible();
-  await page.getByRole('button', { name: '继续编辑', exact: true }).click();
+  await editor.getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: '继续编辑', exact: true }).click();
+  // Wait for the confirmation's exit animation, then target the editor rather
+  // than a global Close selector that can match both dialogs during transition.
+  await expect(confirmation).toHaveCount(0);
   await expect(page.locator('#body-editor')).toHaveValue('我的修改不能被静默覆盖。');
-  await page.getByRole('button', { name: '关闭', exact: true }).click();
-  await page.getByRole('button', { name: '放弃修改', exact: true }).click();
+  await editor.getByRole('button', { name: '关闭', exact: true }).click();
+  await confirmation.getByRole('button', { name: '放弃修改', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
@@ -139,7 +147,7 @@ test('account panel has a real endpoint, export, clipboard fallback and focus re
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('permission denied'); } } }));
   await page.getByRole('button', { name: '复制 MCP 地址' }).click();
   await expect(page.getByRole('alert')).toContainText('手动复制');
-  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => {} } }));
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => {} } } }));
   await page.getByRole('button', { name: '复制 MCP 地址' }).click();
   await expect(page.getByText('已复制 MCP 地址', { exact: true })).toBeVisible();
   await noOverflow(page); await screenshot(page, info, 'settings');
