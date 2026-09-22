@@ -3,8 +3,6 @@ import { me, mockCommunity, proposalTitle, sampleDetail, threadId, topic } from 
 
 async function screenshot(page: Page, info: TestInfo, name: string) {
   await page.evaluate(() => document.fonts.ready);
-  // A fixed dialog exists only within the viewport. A full-document capture
-  // would misleadingly show uncovered off-screen content beneath the backdrop.
   const modal = await page.getByRole('dialog').count() > 0;
   await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: !modal });
 }
@@ -86,8 +84,6 @@ test('edit conflicts preserve the original revision and draft', async ({ page })
   await editor.getByRole('button', { name: '关闭', exact: true }).click();
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole('button', { name: '继续编辑', exact: true }).click();
-  // Wait for the confirmation's exit animation, then target the editor rather
-  // than a global Close selector that can match both dialogs during transition.
   await expect(confirmation).toHaveCount(0);
   await expect(page.locator('#body-editor')).toHaveValue('我的修改不能被静默覆盖。');
   await editor.getByRole('button', { name: '关闭', exact: true }).click();
@@ -144,14 +140,26 @@ test('account panel has a real endpoint, export, clipboard fallback and focus re
   await opener.click();
   await expect(page.getByRole('textbox', { name: '远程 MCP 地址' })).toHaveValue('http://127.0.0.1:4173/mcp');
   await expect(page.getByRole('link', { name: '导出内容与操作记录' })).toHaveAttribute('href', '/api/export');
-  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('permission denied'); } } }));
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async () => { throw new Error('permission denied'); } },
+    });
+  });
   await page.getByRole('button', { name: '复制 MCP 地址' }).click();
   await expect(page.getByRole('alert')).toContainText('手动复制');
-  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => {} } } }));
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async () => Promise.resolve() },
+    });
+  });
   await page.getByRole('button', { name: '复制 MCP 地址' }).click();
   await expect(page.getByText('已复制 MCP 地址', { exact: true })).toBeVisible();
   await noOverflow(page); await screenshot(page, info, 'settings');
-  await page.keyboard.press('Escape'); await expect(page.getByRole('dialog')).toHaveCount(0); await expect(opener).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(opener).toBeFocused();
 });
 
 test('anonymous MCP setup still requires LMM login for identity', async ({ page }) => {
@@ -189,7 +197,9 @@ test('motion can be paused and honors reduced-motion changes', async ({ page }) 
 
 test('responsive widths do not introduce horizontal scrolling', async ({ page }) => {
   await mockCommunity(page); await page.goto('/');
-  for (const width of [320, 390, 768, 1440]) { await page.setViewportSize({ width, height: 900 }); await noOverflow(page); }
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 }); await noOverflow(page);
+  }
 });
 
 test('untrusted Markdown cannot execute or load remote tracking images', async ({ page }) => {
