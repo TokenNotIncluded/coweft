@@ -1,0 +1,111 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: coweft-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: coweft
+          POSTGRES_PASSWORD: test-only-password
+          POSTGRES_DB: coweft
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U coweft -d coweft"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://coweft:test-only-password@localhost:5432/coweft
+      COWEFT_INTEROP_FIXTURE: /tmp/coweft-interop-fixture.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Read the paired identity implementation
+        uses: actions/checkout@v4
+        with:
+          repository: TokenNotIncluded/api.lmm.best
+          ref: b78455ad6a0db054ed387d77ee94c12df4a2b540
+          path: .identity-provider
+          persist-credentials: false
+          sparse-checkout: apps/api-go
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .identity-provider/apps/api-go/go.mod
+          cache-dependency-path: .identity-provider/apps/api-go/go.sum
+      - name: Generate a real Go-signed public receipt for Rust verification
+        run: go test ./oidcprovider -run TestExportInteroperabilityFixture -count=1
+        working-directory: .identity-provider/apps/api-go
+      - run: cargo test --locked --all-targets
+      - run: cargo clippy --locked --all-targets
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Install browser and Chinese system fonts for real-page screenshots
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+      - run: npm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-verification
+          path: |
+            web/test-results/
+            web/playwright-report/
+          retention-days: 14
+      - name: Export the actual built website for independent browser inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coweft-ui-runtime
+          path: |
+            web/dist/
+            web/src/
+            web/index.html
+            web/package.json
+            web/package-lock.json
+            web/tsconfig.json
+            web/vite.config.ts
+            web/tests/
+            web/playwright.config.ts
+          retention-days: 14
+  image:
+    runs-on: ubuntu-latest
+    needs: [rust, web]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - name: Build deployable image without publishing or production credentials
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: coweft:verification
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
