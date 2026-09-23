@@ -267,17 +267,15 @@ test('quick title is carried into the actual editor', async ({ page }) => {
   await expect(page.getByRole('dialog', { name: '保留未提交的内容？' })).toBeVisible();
 });
 
-test('keyboard search and reduced-motion do not depend on animation', async ({ page }) => {
+test('keyboard search and reduced-motion keep the forum fully usable', async ({ page }) => {
   await mockCommunity(page); await page.goto('/');
-  // Navigation resolves before a lazy route has necessarily mounted. Wait for
-  // the real target and its content before sending a keyboard-only action.
   await expect(page.getByRole('textbox', { name: '搜索讨论' })).toBeVisible();
   await expect(page.getByRole('heading', { name: topic })).toBeVisible();
   await page.keyboard.press('Control+k');
   await expect(page.getByRole('textbox', { name: '搜索讨论' })).toBeFocused();
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(page.locator('.discussion-field')).toHaveAttribute('data-motion', 'reduced');
   await expect(page.getByRole('heading', { name: topic })).toBeVisible();
+  await expect(page.locator('.discussion-field')).toHaveCount(0);
 });
 
 test('closing a preview protects an unsent reply', async ({ page }) => {
@@ -296,14 +294,16 @@ test('closing a preview protects an unsent reply', async ({ page }) => {
   await expect(reader).toHaveCount(0);
 });
 
-test('cloud pauses explicitly and when a reader is open', async ({ page }) => {
-  await mockCommunity(page); await page.goto('/');
-  await page.getByRole('button', { name: '暂停动效' }).click();
-  await expect(page.locator('.discussion-field')).toHaveAttribute('data-motion', 'paused');
-  await page.getByRole('button', { name: '播放动效' }).click();
-  await expect(page.locator('.discussion-field')).toHaveAttribute('data-motion', 'running');
+test('reader preview is layered over the real stream without hiding its state', async ({ page }) => {
+  await mockCommunity(page); await page.goto('/?kind=experiment');
+  await expect(page.locator('.thread-row')).toHaveCount(2);
   await page.getByRole('heading', { name: topic }).click();
-  await expect(page.locator('.discussion-field')).toHaveAttribute('data-motion', 'inactive');
+  const reader = page.getByRole('dialog', { name: '讨论预览' });
+  await expect(reader).toBeVisible();
+  await expect(page).toHaveURL(/kind=experiment/);
+  await reader.getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(reader).toHaveCount(0);
+  await expect(page.locator('.thread-row')).toHaveCount(2);
 });
 
 test('malformed preview ids never request another endpoint', async ({ page }) => {

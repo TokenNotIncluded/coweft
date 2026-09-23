@@ -17,10 +17,11 @@ function ThemeSwitch() {
   });
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('coweft-theme', theme); } catch { /* Storage is optional. */ }
+    try { localStorage.setItem('coweft-theme', theme); } catch { /* optional */ }
   }, [theme]);
-  return <Button size="icon" variant="ghost" aria-label={theme === 'light' ? '切换深色主题' : '切换浅色主题'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={17}/> : <Sun size={17}/>}</Button>;
+  return <Button size="icon" variant="ghost" className="theme-switch" aria-label={theme === 'light' ? '切换深色主题' : '切换浅色主题'} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? <Moon size={16}/> : <Sun size={16}/>}</Button>;
 }
+
 function RouteEffects() {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -29,6 +30,7 @@ function RouteEffects() {
   }, [pathname]);
   return null;
 }
+
 export default function App() {
   const [settings, setSettings] = useState(false);
   const me = useMe();
@@ -36,9 +38,11 @@ export default function App() {
     <RouteEffects/>
     <a className="skip-link" href="#main">跳转到内容</a>
     <header className="site-header"><div className="header-inner">
-      <Link className="brand" to="/" aria-label="共织首页"><Mark/><span>coweft<span className="brand-dot">.</span></span><small>共织</small></Link>
+      <Link className="brand" to="/" aria-label="共织首页"><Mark/><span><b>CoWeft</b><small>共织</small></span></Link>
       <nav aria-label="主要导航">{[['/', '讨论'], ['/knowledge', '知识'], ['/consensus', '共识']].map(([path, label]) => <NavLink key={path} to={path} end>{label}</NavLink>)}</nav>
-      <div className="header-actions"><ThemeSwitch/><Button variant="ghost" className="connect-button" aria-label="接入 AI" onClick={() => setSettings(true)}><Plug size={16}/><span>接入 AI</span></Button>
+      <div className="header-actions">
+        <Button variant="ghost" className="connect-button" aria-label="接入 AI" onClick={() => setSettings(true)}><Plug size={15}/><span>AI / MCP</span></Button>
+        <ThemeSwitch/>
         {me.data ? <Button variant="secondary" className="account-button" onClick={() => setSettings(true)} aria-label="账号与 AI"><span className="shared-glyph" aria-hidden="true">○<i>✳</i></span><span className="account-name">{me.data.account.name}</span><SlidersHorizontal size={14}/></Button> : <a className="button button-primary login-button" href="/auth/login">LMM 登录 <ArrowUpRight size={14}/></a>}
       </div>
     </div></header>
@@ -50,7 +54,7 @@ export default function App() {
       <Route path="/consensus" element={<Consensus/>}/>
       <Route path="*" element={<div className="page"><Empty title="页面不存在"><Link to="/" className="text-link">返回讨论 <ArrowUpRight size={15}/></Link></Empty></div>}/>
     </Routes></Suspense></main>
-    <footer className="site-footer"><span>共织 <span aria-hidden="true">/</span> 一个人与一个 AI，同一个账号。</span><a href="https://github.com/TokenNotIncluded/coweft" target="_blank" rel="noopener noreferrer">源代码 <ArrowUpRight size={13}/></a></footer>
+    <footer className="site-footer"><span>CoWeft / 共织</span><span>一个账号，人和 AI 一起参与。</span><a href="https://github.com/TokenNotIncluded/coweft" target="_blank" rel="noopener noreferrer">源代码 <ArrowUpRight size={13}/></a></footer>
     <Suspense fallback={null}><Settings open={settings} close={() => setSettings(false)}/></Suspense>
   </>;
 }
